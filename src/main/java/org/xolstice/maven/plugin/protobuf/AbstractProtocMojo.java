@@ -410,120 +410,127 @@ abstract class AbstractProtocMojo extends AbstractMojo {
             throw new MojoExecutionException(e.getMessage(), e);
         }
 
-        final File protoSourceRoot = getProtoSourceRoot();
-        if (protoSourceRoot.exists()) {
-            try {
-                final List<File> protoFiles = findProtoFilesInDirectory(protoSourceRoot);
-                final File outputDirectory = getOutputDirectory();
-                final List<File> outputFiles = findGeneratedFilesInDirectory(getOutputDirectory());
+        File[] protoSources = getProtoSources();
+        if(protoSources == null || protoSources.length == 0){
+            getLog().info("At least one proto source must be specified!");
+            return;
+        }
 
-                if (protoFiles.isEmpty()) {
-                    getLog().info("No proto files to compile.");
-                } else if (!hasDelta(protoFiles)) {
-                    getLog().info("Skipping compilation because build context has no changes.");
-                    doAttachFiles();
-                } else if (checkStaleness && checkFilesUpToDate(protoFiles, outputFiles)) {
-                    getLog().info("Skipping compilation because target directory newer than sources.");
-                    doAttachFiles();
-                } else {
-                    final List<File> derivedProtoPathElements =
-                            makeProtoPathFromJars(temporaryProtoFileDirectory, getDependencyArtifactFiles());
-                    FileUtils.mkdir(outputDirectory.getAbsolutePath());
+        for (File protoSourceRoot : protoSources) {
+            if (protoSourceRoot.exists()) {
+                try {
+                    final List<File> protoFiles = findProtoFilesInDirectory(protoSourceRoot);
+                    final File outputDirectory = getOutputDirectory();
+                    final List<File> outputFiles = findGeneratedFilesInDirectory(getOutputDirectory());
 
-                    if (clearOutputDirectory) {
-                        try {
-                            cleanDirectory(outputDirectory);
-                        } catch (final IOException e) {
-                            throw new MojoInitializationException("Unable to clean output directory", e);
-                        }
-                    }
+                    if (protoFiles.isEmpty()) {
+                        getLog().info("No proto files to compile.");
+                    } else if (!hasDelta(protoFiles)) {
+                        getLog().info("Skipping compilation because build context has no changes.");
+                        doAttachFiles();
+                    } else if (checkStaleness && checkFilesUpToDate(protoFiles, outputFiles)) {
+                        getLog().info("Skipping compilation because target directory newer than sources.");
+                        doAttachFiles();
+                    } else {
+                        final List<File> derivedProtoPathElements =
+                                makeProtoPathFromJars(temporaryProtoFileDirectory, getDependencyArtifactFiles());
+                        FileUtils.mkdir(outputDirectory.getAbsolutePath());
 
-                    createProtocPlugins();
-
-                    //get toolchain from context
-                    final Toolchain tc = toolchainManager.getToolchainFromBuildContext("protobuf", session); //NOI18N
-                    if (tc != null) {
-                        getLog().info("Toolchain in protobuf-maven-plugin: " + tc);
-                        //when the executable to use is explicitly set by user in mojo's parameter, ignore toolchains.
-                        if (protocExecutable != null) {
-                            getLog().warn(
-                                    "Toolchains are ignored, 'protocExecutable' parameter is set to " + protocExecutable);
-                        } else {
-                            //assign the path to executable from toolchains
-                            protocExecutable = tc.findTool("protoc"); //NOI18N
-                        }
-                    }
-                    if (protocExecutable == null && protocArtifact != null) {
-                        final Artifact artifact = createDependencyArtifact(protocArtifact);
-                        final File file = resolveBinaryArtifact(artifact);
-                        protocExecutable = file.getAbsolutePath();
-                    }
-                    if (protocExecutable == null) {
-                        // Try to fall back to 'protoc' in $PATH
-                        getLog().warn("No 'protocExecutable' parameter is configured, using the default: 'protoc'");
-                        protocExecutable = "protoc";
-                    }
-
-                    final Protoc.Builder protocBuilder =
-                            new Protoc.Builder(protocExecutable)
-                                    .addProtoPathElement(protoSourceRoot)
-                                    .addProtoPathElements(derivedProtoPathElements)
-                                    .addProtoPathElements(asList(additionalProtoPathElements))
-                                    .addProtoFiles(protoFiles);
-                    addProtocBuilderParameters(protocBuilder);
-                    final Protoc protoc = protocBuilder.build();
-
-                    if (getLog().isDebugEnabled()) {
-                        getLog().debug("Proto source root:");
-                        getLog().debug(" " + protoSourceRoot);
-
-                        if (derivedProtoPathElements != null && !derivedProtoPathElements.isEmpty()) {
-                            getLog().debug("Derived proto paths:");
-                            for (final File path : derivedProtoPathElements) {
-                                getLog().debug(" " + path);
+                        if (clearOutputDirectory) {
+                            try {
+                                cleanDirectory(outputDirectory);
+                            } catch (final IOException e) {
+                                throw new MojoInitializationException("Unable to clean output directory", e);
                             }
                         }
 
-                        if (additionalProtoPathElements != null && additionalProtoPathElements.length > 0) {
-                            getLog().debug("Additional proto paths:");
-                            for (final File path : additionalProtoPathElements) {
-                                getLog().debug(" " + path);
+                        createProtocPlugins();
+
+                        //get toolchain from context
+                        final Toolchain tc = toolchainManager.getToolchainFromBuildContext("protobuf", session); //NOI18N
+                        if (tc != null) {
+                            getLog().info("Toolchain in protobuf-maven-plugin: " + tc);
+                            //when the executable to use is explicitly set by user in mojo's parameter, ignore toolchains.
+                            if (protocExecutable != null) {
+                                getLog().warn(
+                                        "Toolchains are ignored, 'protocExecutable' parameter is set to " + protocExecutable);
+                            } else {
+                                //assign the path to executable from toolchains
+                                protocExecutable = tc.findTool("protoc"); //NOI18N
                             }
                         }
-                    }
-                    protoc.logExecutionParameters(getLog());
-
-                    getLog().info(format("Compiling %d proto file(s) to %s", protoFiles.size(), outputDirectory));
-
-                    final int exitStatus = protoc.execute(getLog());
-                    if (StringUtils.isNotBlank(protoc.getOutput())) {
-                        getLog().info("PROTOC: " + protoc.getOutput());
-                    }
-                    if (exitStatus != 0) {
-                        getLog().error("PROTOC FAILED: " + protoc.getError());
-                        for (File pf : protoFiles) {
-                            buildContext.removeMessages(pf);
-                            buildContext.addMessage(pf, 0, 0, protoc.getError(), BuildContext.SEVERITY_ERROR, null);
+                        if (protocExecutable == null && protocArtifact != null) {
+                            final Artifact artifact = createDependencyArtifact(protocArtifact);
+                            final File file = resolveBinaryArtifact(artifact);
+                            protocExecutable = file.getAbsolutePath();
                         }
-                        throw new MojoFailureException(
-                                "protoc did not exit cleanly. Review output for more information.");
-                    } else if (StringUtils.isNotBlank(protoc.getError())) {
-                        getLog().warn("PROTOC: " + protoc.getError());
+                        if (protocExecutable == null) {
+                            // Try to fall back to 'protoc' in $PATH
+                            getLog().warn("No 'protocExecutable' parameter is configured, using the default: 'protoc'");
+                            protocExecutable = "protoc";
+                        }
+
+                        final Protoc.Builder protocBuilder =
+                                new Protoc.Builder(protocExecutable)
+                                        .addProtoPathElement(protoSourceRoot)
+                                        .addProtoPathElements(derivedProtoPathElements)
+                                        .addProtoPathElements(asList(additionalProtoPathElements))
+                                        .addProtoFiles(protoFiles);
+                        addProtocBuilderParameters(protocBuilder);
+                        final Protoc protoc = protocBuilder.build();
+
+                        if (getLog().isDebugEnabled()) {
+                            getLog().debug("Proto source root:");
+                            getLog().debug(" " + protoSourceRoot);
+
+                            if (derivedProtoPathElements != null && !derivedProtoPathElements.isEmpty()) {
+                                getLog().debug("Derived proto paths:");
+                                for (final File path : derivedProtoPathElements) {
+                                    getLog().debug(" " + path);
+                                }
+                            }
+
+                            if (additionalProtoPathElements != null && additionalProtoPathElements.length > 0) {
+                                getLog().debug("Additional proto paths:");
+                                for (final File path : additionalProtoPathElements) {
+                                    getLog().debug(" " + path);
+                                }
+                            }
+                        }
+                        protoc.logExecutionParameters(getLog());
+
+                        getLog().info(format("Compiling %d proto file(s) to %s", protoFiles.size(), outputDirectory));
+
+                        final int exitStatus = protoc.execute(getLog());
+                        if (StringUtils.isNotBlank(protoc.getOutput())) {
+                            getLog().info("PROTOC: " + protoc.getOutput());
+                        }
+                        if (exitStatus != 0) {
+                            getLog().error("PROTOC FAILED: " + protoc.getError());
+                            for (File pf : protoFiles) {
+                                buildContext.removeMessages(pf);
+                                buildContext.addMessage(pf, 0, 0, protoc.getError(), BuildContext.SEVERITY_ERROR, null);
+                            }
+                            throw new MojoFailureException(
+                                    "protoc did not exit cleanly. Review output for more information.");
+                        } else if (StringUtils.isNotBlank(protoc.getError())) {
+                            getLog().warn("PROTOC: " + protoc.getError());
+                        }
+                        doAttachFiles();
                     }
-                    doAttachFiles();
+                } catch (final MojoConfigurationException e) {
+                    throw new MojoExecutionException("Configuration error: " + e.getMessage(), e);
+                } catch (final MojoInitializationException e) {
+                    throw new MojoExecutionException(e.getMessage(), e);
+                } catch (final CommandLineException e) {
+                    throw new MojoExecutionException("An error occurred while invoking protoc: " + e.getMessage(), e);
+                } catch (final InterruptedException e) {
+                    getLog().info("Process interrupted");
                 }
-            } catch (final MojoConfigurationException e) {
-                throw new MojoExecutionException("Configuration error: " + e.getMessage(), e);
-            } catch (final MojoInitializationException e) {
-                throw new MojoExecutionException(e.getMessage(), e);
-            } catch (final CommandLineException e) {
-                throw new MojoExecutionException("An error occurred while invoking protoc: " + e.getMessage(), e);
-            } catch (final InterruptedException e) {
-                getLog().info("Process interrupted");
+            } else {
+                getLog().info(format("%s does not exist. Review the configuration or consider disabling the plugin.",
+                        protoSourceRoot));
             }
-        } else {
-            getLog().info(format("%s does not exist. Review the configuration or consider disabling the plugin.",
-                    protoSourceRoot));
         }
     }
 
@@ -735,6 +742,10 @@ abstract class AbstractProtocMojo extends AbstractMojo {
         if (outputDirectory.isFile()) {
             throw new MojoConfigurationException("'outputDirectory' is a file, not a directory");
         }
+    }
+
+    protected File[] getProtoSources(){
+        return new File[0];
     }
 
     protected abstract File getProtoSourceRoot();

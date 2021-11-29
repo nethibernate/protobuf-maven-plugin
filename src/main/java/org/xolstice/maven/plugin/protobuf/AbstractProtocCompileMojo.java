@@ -40,6 +40,9 @@ public abstract class AbstractProtocCompileMojo extends AbstractProtocMojo {
     )
     private File protoSourceRoot;
 
+    @Parameter(required = true)
+    private File[] protoSources = {};
+
     @Override
     protected void doAttachProtoSources() {
         projectHelper.addResource(project, getProtoSourceRoot().getAbsolutePath(),
@@ -61,5 +64,10 @@ public abstract class AbstractProtocCompileMojo extends AbstractProtocMojo {
     @Override
     protected File getProtoSourceRoot() {
         return protoSourceRoot;
+    }
+
+    @Override
+    protected File[] getProtoSources() {
+        return this.protoSources;
     }
 }
